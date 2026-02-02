@@ -123,10 +123,12 @@ public class PlayerMovement : MonoBehaviour
 
     private void ProcessWallJump()
     {
-        if(isWallSliding) 
+        wallJumpDirection = -orientation;
+        if (WallCheck() && !isWallJumping) 
         {
+            ProcessOrientation();
             isWallJumping = false;
-            wallJumpDirection = -orientation;
+            
             wallJumpTimer = wallJumpTime;
 
             CancelInvoke(nameof(CancelWallJump));
@@ -145,13 +147,12 @@ public class PlayerMovement : MonoBehaviour
 
     public void Jump(InputAction.CallbackContext context)
     {
-        
         if (IsStanding() && context.performed)
         {
-            if(playerRB.linearVelocityY < 0) playerRB.linearVelocityY = 0;
+            if (playerRB.linearVelocityY < 0) playerRB.linearVelocityY = 0;
             playerRB.AddForce(Vector2.up * jumpForce);
         }
-        else if(context.performed && wallJumpTimer > 0)
+        else if(context.performed && WallCheck())
         {
             isWallSliding = false;
             isWallJumping = true;
@@ -161,10 +162,12 @@ public class PlayerMovement : MonoBehaviour
             playerRB.AddForce(wallJumpVector);
             wallJumpTimer = 0;
 
-            
+
 
             Invoke(nameof(CancelWallJump), wallJumpTime + 0.1f);
         }
+         
+        
         
     }
 
@@ -183,11 +186,11 @@ public class PlayerMovement : MonoBehaviour
         {
             if(orientation > 0)
             {
-                wcPos.localPosition = new Vector3(wcPosX, 0,0);
+                transform.localScale = new Vector3(1, transform.localScale.y, transform.localScale.z);
             }
             else
             {
-                wcPos.localPosition = new Vector3(-wcPosX, 0,0);
+                transform.localScale = new Vector3(-1, transform.localScale.y, transform.localScale.z);
             }
         }
     }
@@ -199,9 +202,10 @@ public class PlayerMovement : MonoBehaviour
             
             float deltaSpeed = playerRB.mass * horizontalSpeed * Time.fixedDeltaTime;
 
-            if (horizontalSpeed + deltaSpeed > moveSpeedCap)
+            if (horizontalSpeed + deltaSpeed > moveSpeedCap * 0.75f)
             {
                 float speedToAdd = moveSpeedCap - horizontalSpeed;
+                if (isStanding) speedToAdd *= slideScript.playerFeetDefaultMaterial.friction;
                 playerRB.AddForce(new Vector2(horizontalInput * acceleration * speedToAdd, 0));
             }
             else playerRB.AddForce(new Vector2(horizontalInput * acceleration, 0));
@@ -211,9 +215,10 @@ public class PlayerMovement : MonoBehaviour
             
             float deltaSpeed = playerRB.mass * horizontalSpeed * Time.fixedDeltaTime;
 
-            if (horizontalSpeed + deltaSpeed < -moveSpeedCap)
+            if (horizontalSpeed + deltaSpeed < -moveSpeedCap * 0.75f)
             {
                 float speedToAdd = Mathf.Abs(-moveSpeedCap - horizontalSpeed);
+                if (isStanding) speedToAdd *= slideScript.playerFeetDefaultMaterial.friction;
                 playerRB.AddForce(new Vector2(horizontalInput * acceleration * speedToAdd, 0));
             }
             else playerRB.AddForce(new Vector2(horizontalInput * acceleration, 0));
@@ -223,15 +228,14 @@ public class PlayerMovement : MonoBehaviour
     {
         if (!inputEnabled) return;
         isStanding = IsStanding();
-
-        ProcessWallSlide();
+        ProcessOrientation();
+        if (!slideScript.sliding && !isWallJumping) ProcessWallSlide();
         ProcessWallJump();
         ProcessOrientation();
-
+        
         if (!slideScript.sliding && !isWallJumping) ProcessMovement();
 
         verticalSpeed = playerRB.linearVelocityY;
         horizontalSpeed = playerRB.linearVelocityX;
-        ProcessOrientation();
     }
 }
