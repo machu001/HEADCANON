@@ -21,9 +21,6 @@ public class PlayerSliding : MonoBehaviour
 
     public bool sliding;
 
-    [Header("Input")]
-    public KeyCode slideKey;
-
     void Start()
     {
         playerRB = GetComponent<Rigidbody2D>();
@@ -38,10 +35,11 @@ public class PlayerSliding : MonoBehaviour
     public void Slide(InputAction.CallbackContext context)
     {
         Debug.Log(pm.horizontalInput);
-        if(context.started && pm.horizontalInput != 0)
+        if(context.performed && pm.horizontalInput != 0)
         {
             StartSlide();
             playerRB.gameObject.transform.localScale = new Vector3(playerRB.gameObject.transform.localScale.x, slideYscale, playerRB.gameObject.transform.localScale.z);
+            pm.gcRaycastDistance *= 0.5f;
             if (pm.isStanding) playerRB.AddForce(Vector2.down * 50, ForceMode2D.Impulse);
             playerFeet.sharedMaterial = playerFeetSlideMaterial;
         }
@@ -49,7 +47,7 @@ public class PlayerSliding : MonoBehaviour
         if(context.canceled && sliding)
         {
             StopSlide();
-            playerRB.gameObject.transform.localScale = new Vector3(playerRB.gameObject.transform.localScale.x, startYscale, playerRB.gameObject.transform.localScale.z);
+          
         }
     }
 
@@ -63,13 +61,13 @@ public class PlayerSliding : MonoBehaviour
     void StartSlide()
     {
         sliding = true;
-        
+        Vector2 slideDir = Vector2.right * pm.horizontalInput;
+        playerRB.AddForce(slideDir * slideForce);
     }
 
     void SlideMovement()
     {
         Vector2 slideDir = Vector2.right * pm.horizontalInput;
-
         if (Mathf.Abs(pm.horizontalSpeed) < 1f) StopSlide();
         
     }
@@ -79,5 +77,6 @@ public class PlayerSliding : MonoBehaviour
         sliding = false;
         playerFeet.sharedMaterial = playerFeetDefaultMaterial;
         playerRB.gameObject.transform.localScale = new Vector3(playerRB.gameObject.transform.localScale.x, startYscale, playerRB.gameObject.transform.localScale.z);
+        pm.gcRaycastDistance *= 2;
     }
 }

@@ -3,10 +3,13 @@ using System.Collections.Generic;
 using TMPro;
 using UnityEngine.InputSystem;
 using UnityEngine;
+using Unity.VisualScripting;
 
 public class PlayerMovement : MonoBehaviour
 {
-    [Header ("Movement Values")]
+    [Header("Movement Values")]
+    public float orientation = 1;
+
     public float horizontalInput;
     public float verticalInput;
 
@@ -26,12 +29,31 @@ public class PlayerMovement : MonoBehaviour
     Animator animator = null;
 
     [Header ("Ground Check")]
-    public Vector2 boxSize;
-    public float raycastDistance;
+    public Vector2 gcBoxSize;
+    public float gcRaycastDistance;
     public LayerMask groundLayer;
     public bool isStanding;
+
     [Header ("Input Handling")]
     public bool inputEnabled = true;
+
+    [Header("Wall Check")]
+    public Transform wcPos;
+    public Vector2 wcBoxSize;
+    public float wcRaycastDistance;
+    public LayerMask wallLayer;
+    public bool isNearWall;
+
+    [Header("Wall Movement")]
+    public float wallSlideSpeed = 1;
+    public bool isWallSliding;
+
+    public bool isWallJumping;
+    float wallJumpDirection;
+    public float wallJumpTime;
+    public float wallJumpTimer;
+    public Vector2 wallJumpPower;
+
     // Start is called before the first frame update
     void Start()
     {
@@ -42,7 +64,7 @@ public class PlayerMovement : MonoBehaviour
     public bool IsStanding()
     {
 
-        if(Physics2D.BoxCast(transform.position, boxSize, 0, -transform.up, raycastDistance, groundLayer))
+        if(Physics2D.BoxCast(transform.position, gcBoxSize, 0, -transform.up, gcRaycastDistance, groundLayer))
         {
             if(animator != null) animator.SetBool("IsJumping", false);
             return true;
@@ -57,12 +79,15 @@ public class PlayerMovement : MonoBehaviour
 
     private void OnDrawGizmos()
     {
-        Gizmos.DrawWireCube(transform.position-transform.up * raycastDistance, boxSize);
+        Gizmos.color = Color.green;
+        Gizmos.DrawWireCube(transform.position-transform.up * gcRaycastDistance, gcBoxSize);
+        Gizmos.color = Color.blue;
+        Gizmos.DrawWireCube(wcPos.position-transform.up * wcRaycastDistance, wcBoxSize);
     }
 
     private void OnCollisionEnter2D(Collision2D collision)
     {
-        IsStanding();
+        
     }
 
     private void OnCollisionExit2D(Collision2D collision)
@@ -76,18 +101,71 @@ public class PlayerMovement : MonoBehaviour
         horizontalInput = context.ReadValue<Vector2>().x;
     }
 
+    private bool WallCheck()
+    {
+        return Physics2D.OverlapBox(wcPos.position, wcBoxSize, 0, wallLayer);
+    }
 
+    private void ProcessWallSlide()
+    {
+        if (isWallJumping) return;
+        if(!IsStanding() && WallCheck() && horizontalInput != 0)
+        {
+            isWallSliding = true;
+            playerRB.linearVelocity = new Vector2(playerRB.linearVelocityX, Mathf.Max(playerRB.linearVelocityY, -wallSlideSpeed)); // fall rate cap
+        }
+        else
+        {
+            isWallSliding = false;
+        }
+
+    }
+
+    private void ProcessWallJump()
+    {
+        if(isWallSliding) 
+        {
+            isWallJumping = false;
+            wallJumpDirection = -orientation;
+            wallJumpTimer = wallJumpTime;
+
+            CancelInvoke(nameof(CancelWallJump));
+        }
+        else if(wallJumpTimer > 0f)
+        {
+            wallJumpTimer -= Time.deltaTime;
+        }
+
+    }
+
+    private void CancelWallJump()
+    {
+        isWallJumping = false;
+    }
 
     public void Jump(InputAction.CallbackContext context)
     {
         
-        if (IsStanding() && context.started)
+        if (IsStanding() && context.performed)
         {
-            verticalSpeed = 0;
-            playerRB.linearVelocityY = 0;
+            if(playerRB.linearVelocityY < 0) playerRB.linearVelocityY = 0;
             playerRB.AddForce(Vector2.up * jumpForce);
         }
+        else if(context.performed && wallJumpTimer > 0)
+        {
+            isWallSliding = false;
+            isWallJumping = true;
+            if (playerRB.linearVelocityY < 0) playerRB.linearVelocityY = 0;
+            playerRB.linearVelocityX = 0;
+            Vector2 wallJumpVector = new Vector2(wallJumpDirection * wallJumpPower.x, wallJumpPower.y);
+            playerRB.AddForce(wallJumpVector);
+            wallJumpTimer = 0;
 
+            
+
+            Invoke(nameof(CancelWallJump), wallJumpTime + 0.1f);
+        }
+        
     }
 
     // Update is called once per frame
@@ -96,52 +174,64 @@ public class PlayerMovement : MonoBehaviour
         
     }
 
-    private void FixedUpdate()
+    private void ProcessOrientation()
     {
-        if (!inputEnabled) return;
-        isStanding = IsStanding();
-
-        
-
-        verticalSpeed = playerRB.linearVelocityY;
-        horizontalSpeed = playerRB.linearVelocityX;
-
-
-
-
-
-
-
-
-
-
-        if (slideScript.sliding) return;
-        //ruch lewo/prawo, ograniczany sztywno do limitu jeœli postaæ jest na ziemi
-        if (horizontalSpeed < moveSpeedCap && horizontalInput > 0.5f)
+        if (horizontalSpeed > 0.03f) orientation = 1;
+        if (horizontalSpeed < -0.03f) orientation = -1;
+        float wcPosX = Mathf.Abs(wcPos.localPosition.x);
+        if (Mathf.Abs(horizontalSpeed) > 0.1f)
         {
+            if(orientation > 0)
+            {
+                wcPos.localPosition = new Vector3(wcPosX, 0,0);
+            }
+            else
+            {
+                wcPos.localPosition = new Vector3(-wcPosX, 0,0);
+            }
+        }
+    }
+
+    private void ProcessMovement()
+    {
+        if (horizontalSpeed < moveSpeedCap && horizontalInput > 0.5f) // ruch w prawo
+        {
+            
             float deltaSpeed = playerRB.mass * horizontalSpeed * Time.fixedDeltaTime;
 
-            if(horizontalSpeed + deltaSpeed > moveSpeedCap)
+            if (horizontalSpeed + deltaSpeed > moveSpeedCap)
             {
                 float speedToAdd = moveSpeedCap - horizontalSpeed;
                 playerRB.AddForce(new Vector2(horizontalInput * acceleration * speedToAdd, 0));
             }
             else playerRB.AddForce(new Vector2(horizontalInput * acceleration, 0));
         }
-        else if(horizontalSpeed > -moveSpeedCap && horizontalInput < -0.5f)
+        else if (horizontalSpeed > -moveSpeedCap && horizontalInput < -0.5f) // ruch w lewo
         {
             
             float deltaSpeed = playerRB.mass * horizontalSpeed * Time.fixedDeltaTime;
-            Debug.Log(deltaSpeed);
-            Debug.Log(horizontalSpeed + deltaSpeed);
-            if(horizontalSpeed + deltaSpeed < -moveSpeedCap)
+
+            if (horizontalSpeed + deltaSpeed < -moveSpeedCap)
             {
                 float speedToAdd = Mathf.Abs(-moveSpeedCap - horizontalSpeed);
                 playerRB.AddForce(new Vector2(horizontalInput * acceleration * speedToAdd, 0));
             }
             else playerRB.AddForce(new Vector2(horizontalInput * acceleration, 0));
         }
-        
-        
+    }
+    private void FixedUpdate()
+    {
+        if (!inputEnabled) return;
+        isStanding = IsStanding();
+
+        ProcessWallSlide();
+        ProcessWallJump();
+        ProcessOrientation();
+
+        if (!slideScript.sliding && !isWallJumping) ProcessMovement();
+
+        verticalSpeed = playerRB.linearVelocityY;
+        horizontalSpeed = playerRB.linearVelocityX;
+        ProcessOrientation();
     }
 }
